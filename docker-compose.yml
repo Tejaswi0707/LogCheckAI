@@ -1,0 +1,55 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_DB: signup
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - logcheckai_network
+
+  # Flask Backend with AI Integration
+  backend:
+    build: ./backend
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=signup
+      - DB_USER=postgres
+      - DB_PASSWORD=root
+      - JWT_SECRET_KEY=your-super-secret-jwt-key-12345
+      - GEMINI_ENABLED=true
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-your_api_key_here}
+    env_file:
+      - .env
+    ports:
+      - "5000:5000"
+    depends_on:
+      - postgres
+    networks:
+      - logcheckai_network
+    volumes:
+      - ./backend:/app
+      - /app/venv
+
+  # React Frontend
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - logcheckai_network
+
+volumes:
+  postgres_data:
+
+networks:
+  logcheckai_network:
+    driver: bridge
