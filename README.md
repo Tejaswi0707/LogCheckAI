@@ -90,7 +90,7 @@ GEMINI_ENABLED=true
 
 #### **Tier 2: AI Summarization & Fallback (Intelligence Layer)**
 - **Gemini 2.0 Flash AI**: Google's latest AI model for intelligent security analysis
-- **Professional SOC Reports**: 10-15 lines of actionable intelligence for security analysts
+- **Professional SOC Reports**: Provides actionable intelligence for security analysts
 - **Template Fallback**: Intelligent templates when AI is unavailable (always works)
 
 ### AI Integration
@@ -111,12 +111,7 @@ The system uses **Google Gemini 2.0 Flash API** to generate intelligent, profess
 3. **Wait** for secure analysis to complete
 4. **Review** detected anomalies and AI-generated recommendations
 
-### Sample Log Format
-```csv
-timestamp,source_device,protocol,url,action,application_name,threat_count,malware_count
-Mon Jun 13 17:16:20 2022,us-east-1,HTTP,google.com/,Blocked,Yahoo,3,2
-Mon Jun 20 10:57:32 2022,vpn-node-2,HTTPS,ebay.com/,Blocked,Yahoo,0,1
-```
+
 
 ---
 
@@ -126,5 +121,4 @@ Mon Jun 20 10:57:32 2022,vpn-node-2,HTTPS,ebay.com/,Blocked,Yahoo,0,1
 
 - **AI-Powered Intelligence**: Professional security analysis using Gemini 2.0 Flash
 - **100% Reliability**: Never fails - always provides analysis results
-- **Production Ready**: Deploy to GCP with confidence
 - **Clean Architecture**: Simple, maintainable code structure
