@@ -1,309 +1,149 @@
+import os
+from dotenv import load_dotenv
+import google.generativeai as genai
 from datetime import datetime
 import random
 
+# Load environment variables
+load_dotenv()
+
 class EnhancedAISOCGenerator:
-    """Simple, working SOC generator"""
-    
     def __init__(self):
-        """Initialize simple components"""
+        self.gemini_available = False
+        self.model = None
         
-        # Simple SOC analysis templates
+        # Initialize Gemini if available
+        api_key = os.getenv('GEMINI_API_KEY')
+        if api_key:
+            try:
+                genai.configure(api_key=api_key)
+                self.gemini_available = True
+                self.model = genai.GenerativeModel('gemini-2.0-flash')
+                print("✅ Gemini AI initialized successfully")
+            except Exception as e:
+                print(f"❌ Gemini AI initialization failed: {e}")
+                self.gemini_available = False
+        
+        # Professional SOC templates
         self.soc_templates = {
-            'executive_summary': [
-                "Security analysis of {total_records} log entries revealed {anomaly_count} anomalous activities requiring investigation. The detected anomalies represent a {threat_level} risk level.",
-                "Our security analysis of {total_records} log entries has identified {anomaly_count} security events that require attention. These findings suggest {threat_level} risk conditions.",
-                "Security log analysis covering {total_records} entries has uncovered {anomaly_count} anomalous patterns that warrant investigation. The current threat landscape indicates {threat_level} risk levels."
+            'AI Analysis': [
+                "Security analysis of {total_entries} log entries identified {total_anomalies} anomalies ({anomaly_percentage:.1f}% rate). The {threat_level} threat level indicates {severity_assessment} requiring {action_required}.",
+                "Based on analysis of {total_entries} security logs, {total_anomalies} anomalous activities were detected ({anomaly_percentage:.1f}% anomaly rate). Current threat assessment: {threat_level} - {business_impact}.",
+                "SOC analysis of {total_entries} log entries reveals {total_anomalies} security anomalies ({anomaly_percentage:.1f}% detection rate). Threat level: {threat_level}. {recommendation}."
             ]
         }
     
-    def generate_soc_report(self, log_entries, anomalies):
-        """Generate simple SOC report"""
+    def generate_soc_report(self, log_entries, anomalies, time_range=None, threat_level=None, filename="unknown_file"):
+        """Generate comprehensive SOC report with AI enhancement"""
         try:
-            # Basic statistics
-            total_records = len(log_entries)
-            total_anomalies = len(anomalies)
-            
-            # Calculate time range
-            time_range = self._calculate_time_range(log_entries)
-            
-            # Determine threat level
-            threat_level = self._assess_threat_level(log_entries, anomalies)
-            
-            # Generate simple SOC analysis
-            soc_analysis = self._generate_soc_analysis(log_entries, anomalies, time_range, threat_level)
-            
-            return {
-                'soc_analysis': soc_analysis,
-                'anomaly_analysis': {'total_anomalies': total_anomalies, 'ml_confidence': 0.85, 'detection_method': 'Simple Analysis'},
-                'total_records': total_records,
-                'total_anomalies': total_anomalies,
-                'threat_level': threat_level,
-                'generated_at': datetime.now().isoformat(),
-                'analysis_method': 'Simple Working SOC Generator'
-            }
-            
+            # Try AI generation first
+            ai_summary = self._try_gemini_ai(log_entries, anomalies, threat_level)
+            if ai_summary and len(ai_summary) > 30:
+                return ai_summary
         except Exception as e:
-            return self.generate_fallback_report(log_entries, anomalies)
+            print(f"AI generation failed, using fallback: {e}")
+        
+        # Fallback to professional templates
+        return self._generate_template_summary(log_entries, anomalies, threat_level)
     
-    def _calculate_time_range(self, log_entries):
-        """Calculate the time range covered by the logs"""
+    def _try_gemini_ai(self, log_entries, anomalies, threat_level):
+        """Try to generate AI response using Gemini, fallback to templates if it fails"""
+        if not self.gemini_available or not self.model:
+            return None
+        
         try:
-            timestamps = []
-            for entry in log_entries:
-                if entry.get('timestamp'):
-                    try:
-                        # Parse timestamp (assuming format: YYYY-MM-DD HH:MM:SS)
-                        if ' ' in entry['timestamp']:
-                            date_part = entry['timestamp'].split(' ')[0]
-                            timestamps.append(date_part)
-                    except:
-                        continue
+            # Create sample anomalies for context
+            sample_anomalies = []
+            for i, anomaly in enumerate(anomalies[:3]):
+                sample_anomalies.append({
+                    'index': i + 1,
+                    'timestamp': anomaly.get('timestamp', 'Unknown'),
+                    'user': anomaly.get('user', 'Unknown'),
+                    'src_ip': anomaly.get('src_ip', 'Unknown'),
+                    'reasons': anomaly.get('anomaly_reasons', [])
+                })
             
-            if timestamps:
-                unique_dates = list(set(timestamps))
-                if len(unique_dates) == 1:
-                    return f"a single day ({unique_dates[0]})"
-                elif len(unique_dates) <= 7:
-                    return f"{len(unique_dates)} days (from {min(unique_dates)} to {max(unique_dates)})"
-                else:
-                    return f"{len(unique_dates)} days of activity"
+            # Create AI prompt
+            prompt = f"""
+            You are a cybersecurity analyst. Generate a AI Analysis for a SOC report.
+            
+            Context:
+            - Total log entries analyzed: {len(log_entries)}
+            - Anomalies detected: {len(anomalies)}
+            - Threat level: {threat_level}
+            
+            Sample anomalies:
+            {sample_anomalies}
+            
+            Requirements:
+            1. Write a clear, professional AI Analysis summary (4-5 sentences)
+            2. Focus on business impact and risk assessment
+            3. Use cybersecurity terminology appropriately
+            4. Keep it concise but informative
+            5. No technical jargon that users wouldn't understand
+            6. Strictly No symbols(stars, asterisks, hashes, etc) in text
+            
+            Format: Professional business writing style
+            """
+            
+            # Generate response directly with Gemini
+            response = self.model.generate_content(prompt)
+            
+            if response and response.text:
+                summary = response.text.strip()
+                # Clean up any markdown or extra formatting
+                if summary.startswith('```'):
+                    summary = summary.split('\n', 1)[1] if '\n' in summary else summary
+                if summary.endswith('```'):
+                    summary = summary.rsplit('\n', 1)[0] if '\n' in summary else summary
+                
+                print("Gemini AI summary generated successfully")
+                return summary
             else:
-                return "the analyzed time period"
+                print(" Gemini AI returned empty response")
+                return None
                 
         except Exception as e:
-            return "the analyzed time period"
+            print(f" Gemini AI generation failed: {e}")
+            return None
     
-    def _assess_threat_level(self, log_entries, anomalies):
-        """Assess threat level using simple percentage calculation"""
-        try:
-            total_records = len(log_entries)
-            total_anomalies = len(anomalies)
-            
-            # Enhanced percentage calculation with more granular levels
-            anomaly_percentage = (total_anomalies / total_records) * 100 if total_records > 0 else 0
-            
-            if total_anomalies == 0:
-                threat_level = "SECURE"
-            elif anomaly_percentage <= 2:  # 0-2%
-                threat_level = "VERY_LOW"
-            elif anomaly_percentage <= 5:  # 2-5%
-                threat_level = "LOW"
-            elif anomaly_percentage <= 10:  # 5-10%
-                threat_level = "MEDIUM"
-            elif anomaly_percentage <= 20:  # 10-20%
-                threat_level = "HIGH"
-            else:  # >20%
-                threat_level = "CRITICAL"
-            
-            return threat_level
-            
-        except Exception as e:
-            return "MEDIUM"
-    
-    def _generate_soc_analysis(self, log_entries, anomalies, time_range, threat_level):
-        """Generate simple SOC analysis"""
-        try:
-            # Executive Summary - always generate working version
-            executive_summary = self._generate_executive_summary(
-                len(log_entries), len(anomalies), time_range, threat_level
-            )
-            
-            return {
-                'executive_summary': executive_summary,
-                'key_findings': [],
-                'timeline_analysis': {'events': [], 'narrative': 'Timeline analysis not implemented'},
-                'soc_recommendations': {'immediate': [], 'short_term': [], 'long_term': []}
-            }
-            
-        except Exception as e:
-            return self._generate_fallback_soc_analysis(log_entries, anomalies)
-    
-    def _generate_fallback_soc_analysis(self, log_entries, anomalies):
-        """Generate fallback SOC analysis when main generation fails"""
-        try:
-            total_records = len(log_entries)
-            total_anomalies = len(anomalies)
-            
-            return {
-                'executive_summary': f"Security analysis of {total_records} log entries revealed {total_anomalies} anomalies requiring attention.",
-                'key_findings': [],
-                'timeline_analysis': {'events': [], 'narrative': 'Timeline analysis could not be generated'},
-                'soc_recommendations': {
-                    'immediate': [{'title': 'Review Anomalies', 'description': 'Review all detected anomalies', 'action_steps': ['Document findings']}],
-                    'short_term': [],
-                    'long_term': []
-                }
-            }
-            
-        except Exception as e:
-            return {
-                'executive_summary': 'Error generating SOC analysis',
-                'key_findings': [],
-                'timeline_analysis': {'events': [], 'narrative': 'Error in timeline generation'},
-                'soc_recommendations': {'immediate': [], 'short_term': [], 'long_term': []}
-            }
-    
-    def _generate_executive_summary(self, total_records, anomaly_count, time_range, threat_level):
-        """Generate executive summary - Gemini first, fallback to hardcoded"""
-        try:
-            # Try Gemini first
-            try:
-                from ai_helper import generate_gemini_summary
-                
-                # Create mock data for the function
-                mock_log_entries = [{'dummy': 'data'}] * total_records
-                mock_anomalies = [{'dummy': 'anomaly'}] * anomaly_count
-                
-                ai_summary = generate_gemini_summary(mock_log_entries, mock_anomalies, threat_level)
-                if ai_summary and len(ai_summary) > 30:
-                    return ai_summary
-                else:
-                    pass  # Fallback to hardcoded
-            except Exception as e:
-                pass  # Fallback to hardcoded
-            
-            # Fallback to professional templates
-            return self._generate_professional_summary(total_records, anomaly_count, time_range, threat_level)
-            
-        except Exception as e:
-            return f"Security analysis of {total_records} log entries revealed {anomaly_count} anomalies requiring attention."
-    
-    def _generate_professional_summary(self, total_records, anomaly_count, time_range, threat_level):
-        """Generate professional executive summary using structured templates"""
-        try:
-            template = random.choice(self.soc_templates['executive_summary'])
-            
-            summary = template.format(
-                total_records=total_records,
-                time_range=time_range,
-                anomaly_count=anomaly_count,
-                threat_level=threat_level
-            )
-            
-            # Add contextual insights
-            if anomaly_count == 0:
-                summary += " This represents an excellent security posture with no detected anomalies requiring immediate attention."
-            elif anomaly_count < 5:
-                summary += " While the number of anomalies is relatively low, each requires thorough investigation to ensure no security gaps exist."
-            else:
-                summary += " The elevated number of anomalies suggests potential systemic security issues that require comprehensive review and remediation."
-            
-            return summary
-            
-        except Exception as e:
-            return f"Security analysis of {total_records} log entries revealed {anomaly_count} anomalies requiring attention."
-    
-    def generate_fallback_report(self, log_entries, anomalies):
-        """Generate fallback report when main system fails"""
-        try:
-            total_records = len(log_entries)
-            total_anomalies = len(anomalies)
-            
-            # Calculate anomaly percentage for consistent risk assessment
-            anomaly_percentage = (total_anomalies / total_records) * 100 if total_records > 0 else 0
-            
-            # Enhanced percentage-based threat level calculation
-            if total_anomalies == 0:
-                threat_level = 'SECURE'
-            elif anomaly_percentage <= 2:
-                threat_level = 'VERY_LOW'
-            elif anomaly_percentage <= 5:
-                threat_level = 'LOW'
-            elif anomaly_percentage <= 10:
-                threat_level = 'MEDIUM'
-            elif anomaly_percentage <= 20:
-                threat_level = 'HIGH'
-            else:
-                threat_level = 'CRITICAL'
-            
-            return {
-                'soc_analysis': {
-                    'executive_summary': f"Comprehensive security analysis of {total_records} log entries identified {total_anomalies} anomalies, representing a {anomaly_percentage:.1f}% anomaly rate. The {threat_level} threat level indicates {'no immediate security concerns' if threat_level == 'SECURE' else 'minor security concerns requiring routine monitoring' if threat_level in ['VERY_LOW', 'LOW'] else 'moderate security threats requiring immediate attention' if threat_level == 'MEDIUM' else 'elevated security risks requiring urgent response' if threat_level == 'HIGH' else 'critical security incidents requiring emergency containment measures'}.",
-                    'key_findings': [
-                        f"Anomaly Detection Rate: {anomaly_percentage:.1f}% of total log entries",
-                        f"Threat Level Assessment: {threat_level} based on anomaly density and patterns",
-                        f"Security Posture: {'Excellent' if threat_level == 'SECURE' else 'Good' if threat_level in ['VERY_LOW', 'LOW'] else 'Moderate' if threat_level == 'MEDIUM' else 'Concerning' if threat_level == 'HIGH' else 'Critical'}",
-                        f"Response Priority: {'None required' if threat_level == 'SECURE' else 'Low priority monitoring' if threat_level in ['VERY_LOW', 'LOW'] else 'Medium priority investigation' if threat_level == 'MEDIUM' else 'High priority response' if threat_level == 'HIGH' else 'Emergency response required'}"
-                    ],
-                    'timeline_analysis': {
-                        'events': [
-                            f"Analysis Period: {total_records} log entries processed",
-                            f"Anomaly Detection: {total_anomalies} security events identified",
-                            f"Risk Assessment: {threat_level} threat level determined",
-                            f"Response Required: {'Immediate' if threat_level in ['HIGH', 'CRITICAL'] else 'Within 24 hours' if threat_level == 'MEDIUM' else 'Routine monitoring'}"
-                        ],
-                        'narrative': f"Security log analysis timeline shows {total_anomalies} anomalies detected across {total_records} entries, requiring {threat_level.lower()} level response protocols."
-                    },
-                    'soc_recommendations': {
-                        'immediate': [
-                            {
-                                'title': 'Anomaly Investigation',
-                                'description': f"Investigate all {total_anomalies} detected anomalies for potential security threats",
-                                'action_steps': [
-                                    'Document each anomaly with timestamps and details',
-                                    'Assess threat level and potential impact',
-                                    'Implement immediate containment if critical',
-                                    'Notify incident response team if threat level is HIGH or CRITICAL'
-                                ]
-                            }
-                        ],
-                        'short_term': [
-                            {
-                                'title': 'Security Assessment',
-                                'description': 'Conduct comprehensive security review of affected systems',
-                                'action_steps': [
-                                    'Review access logs and user activity patterns',
-                                    'Analyze network traffic for suspicious patterns',
-                                    'Update security policies based on findings',
-                                    'Implement additional monitoring if needed'
-                                ]
-                            }
-                        ],
-                        'long_term': [
-                            {
-                                'title': 'Security Enhancement',
-                                'description': 'Strengthen security posture based on analysis findings',
-                                'action_steps': [
-                                    'Update incident response procedures',
-                                    'Enhance monitoring and detection capabilities',
-                                    'Conduct security awareness training',
-                                    'Implement preventive measures to avoid future incidents'
-                                ]
-                            }
-                        ]
-                    }
-                },
-                'anomaly_analysis': {
-                    'total_anomalies': total_anomalies,
-                    'anomaly_types': {},
-                    'ml_confidence': 0.0,
-                    'detection_method': 'Fallback System'
-                },
-                'total_records': total_records,
-                'total_anomalies': total_anomalies,
-                'anomaly_percentage': round(anomaly_percentage, 2),
-                'threat_level': threat_level,
-                'generated_at': datetime.now().isoformat(),
-                'analysis_method': 'Simple Fallback System'
-            }
-            
-        except Exception as e:
-            return {
-                'soc_analysis': {
-                    'executive_summary': 'Error generating SOC report',
-                    'key_findings': [],
-                    'timeline_analysis': {'events': [], 'narrative': 'Error in timeline generation'},
-                    'soc_recommendations': {'immediate': [], 'short_term': [], 'long_term': []}
-                },
-                'anomaly_analysis': {
-                    'total_anomalies': 0,
-                    'anomaly_types': {},
-                    'ml_confidence': 0.0,
-                    'detection_method': 'Error'
-                },
-                'total_records': len(log_entries),
-                'total_anomalies': 0,
-                'threat_level': 'ERROR',
-                'generated_at': datetime.now().isoformat(),
-                'analysis_method': 'Error Fallback'
-            }
+    def _generate_template_summary(self, log_entries, anomalies, threat_level):
+        """Generate fallback summary using professional templates"""
+        total_entries = len(log_entries)
+        total_anomalies = len(anomalies)
+        anomaly_percentage = (total_anomalies / total_entries * 100) if total_entries > 0 else 0
+        
+        # Determine severity and actions based on anomaly percentage
+        if total_anomalies == 0:
+            severity_assessment = "no security concerns"
+            action_required = "routine monitoring"
+            business_impact = "normal operations"
+            recommendation = "Continue standard security monitoring protocols."
+        elif anomaly_percentage <= 25:
+            severity_assessment = "minor security concerns"
+            action_required = "routine monitoring and investigation"
+            business_impact = "low risk to operations"
+            recommendation = "Implement enhanced monitoring and investigate identified anomalies."
+        elif anomaly_percentage <= 50:
+            severity_assessment = "moderate security threats"
+            action_required = "immediate attention from SOC team"
+            business_impact = "moderate risk to business operations"
+            recommendation = "Activate incident response procedures and conduct thorough investigation."
+        else:
+            severity_assessment = "critical security incidents"
+            action_required = "immediate emergency response and containment"
+            business_impact = "high risk to business continuity"
+            recommendation = "Implement emergency containment measures and activate crisis response team."
+        
+        # Select and format template
+        template = random.choice(self.soc_templates['AI Analysis'])
+        return template.format(
+            total_entries=total_entries,
+            total_anomalies=total_anomalies,
+            anomaly_percentage=anomaly_percentage,
+            threat_level=threat_level,
+            severity_assessment=severity_assessment,
+            action_required=action_required,
+            business_impact=business_impact,
+            recommendation=recommendation
+        )

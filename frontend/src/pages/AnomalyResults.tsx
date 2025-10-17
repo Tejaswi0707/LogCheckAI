@@ -1,10 +1,20 @@
+//@ts-nocheck
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config';
+
+
+
 
 const AnomalyResults = () => {
   const [uploadResult, setUploadResult] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [entriesPerPage] = useState(10);
   const [activeTab, setActiveTab] = useState('summary');
+  const [fromTimestamp, setfromTimestamp]=useState("");
+  const [toTimestamp, settoTimestamp]=useState("");
+  const [filteredData, setfilteredData]=useState<any[]>([]);
+ 
+
 
   useEffect(() => {
     const storedResult = localStorage.getItem('uploadResult');
@@ -12,165 +22,87 @@ const AnomalyResults = () => {
       try {
         setUploadResult(JSON.parse(storedResult));
       } catch (e) {
-        // Silently handle localStorage parsing errors
         setUploadResult(null);
       }
     }
   }, []);
 
   if (!uploadResult) {
-    return (
-      <div style={{ padding: '20px', textAlign: 'center' }}>
-        <h1>Log Analysis Results</h1>
-        <p>No analysis data found. Please upload a file from the Dashboard first.</p>
-      </div>
-    );
+  return (
+    <div className="results-container">
+      <h1 className="results-title">Log Analysis Results</h1>
+      <p className="results-subtitle">Loading analysis data...</p>
+    </div>
+  );
+}
+
+  const fromTime=(event)=>{
+    setfromTimestamp(event.target.value);
   }
 
-  // Pagination logic
-  const totalPages = Math.ceil((uploadResult.log_entries?.length || 0) / entriesPerPage);
-  const startIndex = (currentPage - 1) * entriesPerPage;
-  const endIndex = startIndex + entriesPerPage;
-  const currentEntries = uploadResult.log_entries?.slice(startIndex, endIndex) || [];
+  const toTime=(event)=>{
+    settoTimestamp(event.target.value);
+  }
 
-  // Get anomaly count
-  const anomalyCount = uploadResult.log_entries?.filter((entry: any) => entry.is_anomaly)?.length || 0;
+  const toBackendDateTime = (value: string) => {
+    if (!value) return value;
+    const parts = value.split('T');
+    if (parts.length !== 2) return value;
+    const date = parts[0];
+    let time = parts[1];
+    if (time.length === 5) {
+      time = time + ':00';
+    }
+    return `${date} ${time}`;
+  }
 
-  // Get SOC report data
-  const socReport = uploadResult.soc_report || {};
-  const anomalyAnalysis = socReport.anomaly_analysis || {};
-
-  // Generate detailed analysis text using backend Gemini AI or fallback
-  const generateDetailedAnalysis = () => {
-    // Check if we have AI-generated summary from backend
-    if (socReport?.soc_analysis?.executive_summary) {
-              return socReport.soc_analysis.executive_summary;
+  const handleRequest=async()=>{
+    try {
+      if (!fromTimestamp || !toTimestamp) {
+        alert('Please select both From and To date/time.');
+        return;
       }
-      
-      // Fallback to local generation if no AI summary available
-    const totalEntries = uploadResult.log_entries?.length || 0;
-    const anomalyRate = totalEntries > 0 ? (anomalyCount / totalEntries * 100) : 0;
-    
-    // Calculate threat level
-    let threatLevel = 'SECURE';
-    if (anomalyCount > 0) {
-      if (anomalyRate <= 25) {
-        threatLevel = 'LOW';
-      } else if (anomalyRate <= 50) {
-        threatLevel = 'MEDIUM';
-      } else {
-        threatLevel = 'CRITICAL';
-      }
-    }
-    
-    let analysisText = `Log analysis of ${totalEntries} log entries revealed ${anomalyCount} anomalous activities requiring investigation. `;
-    
-    if (anomalyCount === 0) {
-      analysisText += `The system appears to be operating within normal parameters with a ${threatLevel} threat level.`;
-    } else if (anomalyRate <= 25) {
-      analysisText += `The ${threatLevel} threat level indicates minor concerns requiring routine monitoring.`;
-    } else if (anomalyRate <= 50) {
-      analysisText += `The ${threatLevel} threat level suggests moderate threats requiring immediate attention.`;
-    } else {
-      analysisText += `The ${threatLevel} threat level indicates critical incidents requiring emergency response.`;
-    }
 
-    // Add user behavior analysis with intelligent thresholds
-    const userStats: { [key: string]: number } = {};
-    const ipStats: { [key: string]: number } = {};
-    uploadResult.log_entries?.forEach((entry: any) => {
-      const user = entry.user || 'unknown';
-      const ip = entry.src_ip || 'unknown';
-      userStats[user] = (userStats[user] || 0) + 1;
-      ipStats[ip] = (ipStats[ip] || 0) + 1;
-    });
+      const log_entries = uploadResult.log_entries || [];
+      const payload = {
+        log_entries,
+        fromTimestamp: toBackendDateTime(fromTimestamp),
+        toTimestamp: toBackendDateTime(toTimestamp)
+      };
 
-    const avgRequestsPerUser = totalEntries / Object.keys(userStats).length;
-    const avgRequestsPerIP = totalEntries / Object.keys(ipStats).length;
-    
-    // Set thresholds: More conservative for smaller datasets
-    // For datasets < 100 records: 5x average is suspicious, 8x average is highly suspicious
-    const multiplier = totalEntries < 100 ? 5 : 3;
-    const userThreshold = Math.max(5, avgRequestsPerUser * multiplier);
-    const ipThreshold = Math.max(5, avgRequestsPerIP * multiplier);
-    
-    const suspiciousUsers = Object.entries(userStats).filter(([,count]) => (count as number) > userThreshold);
-    const suspiciousIPs = Object.entries(ipStats).filter(([,count]) => (count as number) > ipThreshold);
-
-    if (suspiciousUsers.length > 0) {
-      const topSuspiciousUser = suspiciousUsers.sort(([,a], [,b]) => (b as number) - (a as number))[0];
-      analysisText += ` User activity analysis shows that '${topSuspiciousUser[0]}' generated ${topSuspiciousUser[1]} requests (${(topSuspiciousUser[1] as number / avgRequestsPerUser).toFixed(1)}x above average), which may indicate either legitimate high-usage patterns or potential account compromise requiring investigation.`;
-    }
-
-    if (suspiciousIPs.length > 0) {
-      const topSuspiciousIP = suspiciousIPs.sort(([,a], [,b]) => (b as number) - (a as number))[0];
-      analysisText += ` Network analysis reveals that IP address ${topSuspiciousIP[0]} generated ${topSuspiciousIP[1]} requests (${(topSuspiciousIP[1] as number / avgRequestsPerIP).toFixed(1)}x above average), suggesting either normal business operations or potential reconnaissance activities that warrant monitoring.`;
-    }
-
-    // Add threat correlation - only count anomalies
-    if (anomalyCount > 0) {
-      let totalThreats = 0;
-      let validThreatCounts = 0;
-      
-      // Only process anomaly records for threat correlation
-      uploadResult.log_entries?.forEach((entry: any) => {
-        if (entry.is_anomaly && entry.threat_count !== undefined && entry.threat_count !== null) {
-          const threatCount = Number(entry.threat_count);
-          if (!isNaN(threatCount) && threatCount >= 0 && threatCount < 1000) {
-            totalThreats += threatCount;
-            validThreatCounts++;
-          }
-        }
+      const response = await fetch(`${API_BASE_URL}/filter`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       });
-      
-      if (validThreatCounts > 0 && totalThreats > 0) {
-        analysisText += ` Threat correlation analysis identified ${totalThreats} total threat indicators across ${validThreatCounts} anomalous entries, suggesting potential coordinated attack activity or systemic security vulnerabilities that require immediate attention from the incident response team.`;
-      } else if (anomalyCount > 5) {
-        analysisText += ` The high number of anomalies suggests potential coordinated attack activity or systemic security vulnerabilities that require immediate attention from the incident response team.`;
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || `Request failed with status ${response.status}`);
       }
-    }
 
-    return analysisText;
-  };
-
-  // Generate actionable recommendations
-  const generateRecommendations = () => {
-    if (anomalyCount === 0) {
-      return [
-        "Continue current security monitoring practices",
-        "Maintain existing security controls effectiveness",
-        "Schedule regular security posture reviews"
-      ];
-    } else if (anomalyCount < 5) {
-      return [
-        "Investigate each anomaly to determine root cause",
-        "Review security monitoring thresholds",
-        "Update incident response procedures if needed",
-        "Document findings for future reference"
-      ];
-    } else if (anomalyCount < 15) {
-      return [
-        "Activate incident response team for coordination",
-        "Implement enhanced monitoring for affected systems",
-        "Review and update security policies",
-        "Conduct security awareness training",
-        "Consider additional security controls"
-      ];
-    } else {
-      return [
-        "Immediately activate emergency response procedures",
-        "Isolate affected systems and networks",
-        "Engage senior management and legal teams",
-        "Notify relevant authorities if required",
-        "Implement containment measures",
-        "Begin comprehensive security assessment"
-      ];
+      const data = await response.json();
+      setfilteredData(Array.isArray(data.result) ? data.result : []);
+      setCurrentPage(1);
+    } catch (e:any) {
+      console.error('Filter request failed:', e);
+      alert('Filter request failed. Please ensure the backend is running and try again.');
+      setfilteredData([]);
     }
-  };
+  }
+  
+
+  // Use backend data directly
+  const anomalies = uploadResult.anomalies || [];
+  const totalEntries = uploadResult.total_entries || uploadResult.log_entries?.length || 0;
+  const totalAnomalies = uploadResult.total_anomalies || anomalies.length;
+  const threatLevel = uploadResult.threat_level || 'UNKNOWN';
+  const socReport = uploadResult.soc_report || '';
+
 
   // Generate timeline summary for SOC analysts
   const generateTimelineSummary = () => {
-    if (anomalyCount === 0) {
+    if (totalAnomalies === 0) {
       return "The security timeline shows consistent normal activity throughout the analysis period with no detected anomalies. This indicates a stable security environment with effective controls in place.";
     }
 
@@ -221,306 +153,127 @@ const AnomalyResults = () => {
     return timelineText;
   };
 
-  // Generate simple anomaly reason in plain English
-  const generateAnomalyReason = (entry: any) => {
-    if (!entry.is_anomaly) return "Normal activity";
-    
-    // If we have specific anomaly reasons from the backend, use them
-    if (entry.anomaly_reasons && entry.anomaly_reasons.length > 0) {
-      // Convert technical reasons to simple English and remove duplicates
-      const reasonMap = new Map();
-      
-      entry.anomaly_reasons.forEach((reason: string) => {
-        let simpleReason = "";
-        
-        // Preserve ML detection messages
-        if (reason.includes('🤖 ML Detected:')) {
-          simpleReason = reason; // Keep ML messages as-is
-        }
-        // Convert common technical terms to simple English
-        else if (reason.toLowerCase().includes('malware')) simpleReason = "Malware detected";
-        else if (reason.toLowerCase().includes('phishing')) simpleReason = "Phishing attempt";
-        else if (reason.toLowerCase().includes('brute')) simpleReason = "Brute force attack";
-        else if (reason.toLowerCase().includes('sql')) simpleReason = "SQL injection attempt";
-        else if (reason.toLowerCase().includes('xss')) simpleReason = "XSS attack attempt";
-        else if (reason.toLowerCase().includes('command')) simpleReason = "Command injection attempt";
-        else if (reason.toLowerCase().includes('directory')) simpleReason = "Directory traversal attempt";
-        else if (reason.toLowerCase().includes('file')) simpleReason = "Suspicious file upload";
-        else if (reason.toLowerCase().includes('data')) simpleReason = "Data exfiltration attempt";
-        else if (reason.toLowerCase().includes('admin')) simpleReason = "Unauthorized admin access";
-        else if (reason.toLowerCase().includes('unusual')) simpleReason = "Unusual activity pattern";
-        else if (reason.toLowerCase().includes('frequency')) simpleReason = "High request frequency";
-        else if (reason.toLowerCase().includes('threshold')) simpleReason = "Threshold exceeded";
-        else if (reason.toLowerCase().includes('baseline')) simpleReason = "Baseline deviation";
-        else if (reason.toLowerCase().includes('outlier')) simpleReason = "Statistical outlier";
-        else if (reason.toLowerCase().includes('error') && entry.http_status) {
-          simpleReason = `HTTP error: Status ${entry.http_status}`;
-        }
-        else if (reason.length < 50 && !reason.includes('_') && !reason.includes('.')) {
-          simpleReason = reason;
-        }
-        else {
-          simpleReason = "Security violation detected";
-        }
-        
-        // Only add if not already present
-        if (simpleReason && !reasonMap.has(simpleReason)) {
-          reasonMap.set(simpleReason, true);
-        }
-      });
-      
-      const uniqueReasons = Array.from(reasonMap.keys());
-      return uniqueReasons.length > 0 ? uniqueReasons.join("; ") : "Security violation detected";
-    }
-    
-    // Generate reason based on entry data if no specific reasons provided
-    const reasons = [];
-    
-    if (entry.threat_count > 0) reasons.push(`Threat indicators: ${entry.threat_count}`);
-    if (entry.malware_count > 0) reasons.push(`Malware detected: ${entry.malware_count}`);
-    if (entry.action === 'blocked') reasons.push("Access blocked");
-    if (entry.http_status >= 400) reasons.push(`HTTP error: ${entry.http_status}`);
-    if (entry.ssl_cert_validity_days === 0) reasons.push("Invalid SSL certificate");
-    
-    if (reasons.length > 0) {
-      return reasons.join("; ");
-    }
-    
-    return "Security violation detected";
-  };
+  
 
-  // Generate visualization data
-  const generateVisualizationData = () => {
-    const totalEntries = uploadResult.log_entries?.length || 0;
-    const normalCount = totalEntries - anomalyCount;
-    
-    // Time-based analysis
-    const timeSlots: { [key: string]: number } = {};
-    const userActivity: { [key: string]: number } = {};
-    const ipActivity: { [key: string]: number } = {};
-    
-    uploadResult.log_entries?.forEach((entry: any) => {
-      // Time slots (hourly)
-      const hour = entry.timestamp ? new Date(entry.timestamp).getHours() : 0;
-      const timeSlot = `${hour}:00-${hour + 1}:00`;
-      timeSlots[timeSlot] = (timeSlots[timeSlot] || 0) + 1;
-      
-      // User activity
-      const user = entry.user || 'Unknown';
-      userActivity[user] = (userActivity[user] || 0) + 1;
-      
-      // IP activity
-      const ip = entry.src_ip || 'Unknown';
-      ipActivity[ip] = (ipActivity[ip] || 0) + 1;
-    });
-
-    return {
-      timeSlots,
-      userActivity,
-      ipActivity,
-      normalCount,
-      anomalyCount,
-      totalEntries
-    };
-  };
-
-  const vizData = generateVisualizationData();
-
+  // Pagination logic (keep as requested)
+  const baseEntries = (Array.isArray(filteredData) && filteredData.length > 0)
+    ? filteredData
+    : (uploadResult.log_entries || []);
+  const totalPages = Math.ceil(baseEntries.length / entriesPerPage);
+  const startIndex = (currentPage - 1) * entriesPerPage;
+  const endIndex = startIndex + entriesPerPage;
+  const currentEntries = baseEntries.slice(startIndex, endIndex);
+  
+  
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+    <div className="results-container">
       
       {/* Header */}
-      <div style={{ marginBottom: '30px' }}>
-        <h1 style={{ margin: '0 0 10px 0', fontSize: '28px', fontWeight: '500', color: '#333' }}>
-          Log Analysis Results
-        </h1>
-        <p style={{ margin: '0', fontSize: '16px', color: '#666' }}>
-          Security analysis report for {uploadResult.filename}
-        </p>
+      <div className="results-header">
+        <h1 className="results-title">Log Analysis Results</h1>
+        <p className="results-subtitle">Security analysis report</p>
       </div>
       
       {/* File Information */}
-      <div style={{ 
-        backgroundColor: '#f8f9fa', 
-        padding: '20px', 
-        borderRadius: '6px', 
-        marginBottom: '25px', 
-        border: '1px solid #e9ecef'
-      }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '20px' }}>
+      <div className="file-info-section">
+        <div className="stats-grid">
           <div>
-            <div style={{ fontSize: '24px', fontWeight: '500', color: '#333' }}>{uploadResult.log_entries?.length || 0}</div>
-            <div style={{ fontSize: '14px', color: '#666' }}>Total Entries</div>
-          </div>
-                    <div>
-            <div style={{ fontSize: '24px', fontWeight: '500', color: '#dc3545' }}>{anomalyCount}</div>
-            <div style={{ fontSize: '14px', color: '#666' }}>Anomalies</div>
+            <div className="stat-number">{totalEntries}</div>
+            <div className="stat-label">Total Entries</div>
           </div>
           <div>
-            <div style={{ fontSize: '20px', fontWeight: '500', color: '#333' }}>
-              {(() => {
-                if (anomalyCount === 0) return 'SECURE';
-                const percentage = (anomalyCount / (uploadResult.log_entries?.length || 1)) * 100;
-                if (percentage <= 25) return 'LOW';
-                if (percentage <= 50) return 'MEDIUM';
-                return 'CRITICAL';
-              })()}
-            </div>
-            <div style={{ fontSize: '14px', color: '#666' }}>Threat Level</div>
+            <div className="stat-number anomaly">{totalAnomalies}</div>
+            <div className="stat-label">Anomalies</div>
+          </div>
+          <div>
+            <div className="stat-number">{threatLevel}</div>
+            <div className="stat-label">Threat Level</div>
           </div>
         </div>
       </div>
 
+
       {/* Main Content Tabs */}
-      <div style={{ backgroundColor: 'white', borderRadius: '6px', border: '1px solid #e9ecef', overflow: 'hidden' }}>
+      <div className="tabs-container">
         
         {/* Tab Navigation */}
-        <div style={{ display: 'flex', borderBottom: '1px solid #e9ecef', backgroundColor: '#f8f9fa' }}>
+        <div className="tab-header">
           <button
             onClick={() => setActiveTab('summary')}
-            style={{
-              padding: '15px 25px',
-              border: 'none',
-              backgroundColor: activeTab === 'summary' ? '#007bff' : 'transparent',
-              color: activeTab === 'summary' ? 'white' : '#495057',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '500',
-              borderRight: '1px solid #e9ecef'
-            }}
+            className={`tab-button ${activeTab === 'summary' ? 'active' : ''}`}
           >
             Log Analysis
           </button>
           <button
             onClick={() => setActiveTab('anomaly-detection')}
-            style={{
-              padding: '15px 25px',
-              border: 'none',
-              backgroundColor: activeTab === 'anomaly-detection' ? '#007bff' : 'transparent',
-              color: activeTab === 'anomaly-detection' ? 'white' : '#495057',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '500',
-              borderRight: '1px solid #e9ecef'
-            }}
+            className={`tab-button ${activeTab === 'anomaly-detection' ? 'active' : ''}`}
           >
             Anomaly Detection
           </button>
           <button
             onClick={() => setActiveTab('visualization')}
-            style={{
-              padding: '15px 25px',
-              border: 'none',
-              backgroundColor: activeTab === 'visualization' ? '#007bff' : 'transparent',
-              color: activeTab === 'visualization' ? 'white' : '#495057',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '500'
-            }}
+            className={`tab-button ${activeTab === 'visualization' ? 'active' : ''}`}
           >
             Data Visualization
           </button>
         </div>
 
         {/* Tab Content */}
-        <div style={{ padding: '25px' }}>
+        <div className="tab-content">
 
           {/* Security Summary Tab */}
           {activeTab === 'summary' && (
             <div>
-              <h2 style={{ margin: '0 0 25px 0', color: '#333', fontSize: '22px', fontWeight: '500' }}>
-                Log Analysis Summary
-              </h2>
+              <h2 className="tab-title">Log Analysis Summary</h2>
 
-              {/* Analysis Summary */}
-              <div style={{ 
-                padding: '20px', 
-                backgroundColor: '#f8f9fa', 
-                borderRadius: '6px', 
-                border: '1px solid #e9ecef',
-                lineHeight: '1.6',
-                marginBottom: '25px'
-              }}>
-                <h3 style={{ margin: '0 0 15px 0', color: '#333', fontSize: '18px', fontWeight: '500' }}>
-                  Detailed Analysis
-          </h3>
-                <p style={{ margin: '0', fontSize: '15px', color: '#333' }}>
-                  {generateDetailedAnalysis()}
+              {/* Analysis Summary - Use Backend's soc_report */}
+              <div className="analysis-card">
+                <h3 className="tab-subtitle">Detailed Analysis</h3>
+                <p className="analysis-text">
+                  {socReport || 'No detailed analysis available from backend.'}
                 </p>
               </div>
 
               {/* Timeline Summary */}
-              <div style={{ 
-                padding: '20px', 
-                backgroundColor: 'white', 
-                borderRadius: '6px', 
-                border: '1px solid #e9ecef',
-                lineHeight: '1.6',
-                marginBottom: '25px'
-              }}>
-                <h3 style={{ margin: '0 0 20px 0', color: '#333', fontSize: '18px', fontWeight: '500' }}>
-                  Timeline Analysis
-                </h3>
-                <p style={{ margin: '0 0 20px 0', fontSize: '15px', color: '#333' }}>
+              <div className="timeline-card">
+                <h3 className="tab-subtitle">Timeline Analysis</h3>
+                <p className="analysis-text">
                   {generateTimelineSummary()}
                 </p>
                 
-                {/* Key Events */}
-                {uploadResult.log_entries?.filter((entry: any) => entry.is_anomaly).length > 0 && (
+                {/* Key Events - Use Backend's anomalies */}
+                {anomalies.length > 0 && (
                   <div>
-                    <h4 style={{ margin: '0 0 15px 0', color: '#333', fontSize: '16px', fontWeight: '500' }}>
-                      Key Security Events:
-                    </h4>
-                    <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                      {uploadResult.log_entries
-                        ?.filter((entry: any) => entry.is_anomaly)
+                    <h4 className="tab-subtitle">Key Security Events:</h4>
+                    <div className="events-container">
+                      {anomalies
                         .sort((a: any, b: any) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime())
-                        .map((entry: any, index: number) => (
-                          <div key={index} style={{ 
-                            padding: '12px', 
-                            marginBottom: '8px', 
-                            backgroundColor: '#f8f9fa', 
-                            borderRadius: '4px', 
-                            border: '1px solid #e9ecef'
-                          }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                              <strong style={{ color: '#333', fontSize: '14px' }}>
-                                Event {index + 1}
-                              </strong>
-                              <span style={{ fontSize: '13px', color: '#666' }}>
-                                {entry.timestamp}
-                      </span>
+                        .map((anomaly: any, index: number) => (
+                          <div key={index} className="event-item">
+                            <div className="event-header">
+                              <strong className="event-title">Event {index + 1}</strong>
+                              <span className="event-time">{anomaly.timestamp}</span>
                             </div>
-                            <div style={{ fontSize: '13px', color: '#666', marginBottom: '4px' }}>
-                              User: {entry.user || 'Unknown'} | IP: {entry.src_ip || 'Unknown'}
+                            <div className="event-details">
+                              User: {anomaly.user || 'Unknown'} | IP: {anomaly.src_ip || 'Unknown'}
                             </div>
-                            <div style={{ fontSize: '13px', color: '#333' }}>
-                              {generateAnomalyReason(entry)}
+                            <div className="event-reason">
+                              {anomaly.anomaly_reasons}
                             </div>
                           </div>
                         ))}
                     </div>
-                            </div>
-                          )}
-                        </div>
+                  </div>
+                )}
+              </div>
 
               {/* Actionable Recommendations */}
-              <div style={{ 
-                padding: '20px', 
-                backgroundColor: '#fff3e0', 
-                borderRadius: '6px', 
-                border: '1px solid #ffcc02',
-                lineHeight: '1.6'
-              }}>
-                <h3 style={{ margin: '0 0 15px 0', color: '#e65100', fontSize: '18px', fontWeight: '500' }}>
-                  Recommended Actions
-                </h3>
-                <ul style={{ margin: '0', paddingLeft: '20px' }}>
-                  {generateRecommendations().map((rec, index) => (
-                    <li key={index} style={{ marginBottom: '8px', fontSize: '15px', color: '#bf360c' }}>
-                      {rec}
-                    </li>
-                  ))}
+              <div className="recommendations-card">
+                <h3 className="recommendations-title">Recommended Actions</h3>
+                <ul className="recommendations-list">
+                  <li>Investigate detected anomalies</li>
+                  <li>Review security monitoring thresholds</li>
+                  <li>Update incident response procedures if needed</li>
                 </ul>
               </div>
             </div>
@@ -529,303 +282,230 @@ const AnomalyResults = () => {
           {/* Anomaly Detection Tab */}
           {activeTab === 'anomaly-detection' && (
             <div>
-              <h2 style={{ margin: '0 0 25px 0', color: '#333', fontSize: '22px', fontWeight: '500' }}>
-                Anomaly Detection Results
-              </h2>
+              <h2 className="tab-title">Anomaly Detection Results</h2>
 
               {/* Anomaly Overview */}
-              <div style={{ marginBottom: '25px', padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '6px', border: '1px solid #e9ecef' }}>
-                <h3 style={{ margin: '0 0 20px 0', color: '#333', fontSize: '18px', fontWeight: '500' }}>
-                  Detection Summary
-                </h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '20px' }}>
-                  <div style={{ textAlign: 'center', padding: '15px', backgroundColor: 'white', borderRadius: '4px', border: '1px solid #e9ecef' }}>
-                    <div style={{ fontSize: '28px', fontWeight: '500', color: '#dc3545' }}>{anomalyCount}</div>
-                    <div style={{ fontSize: '13px', color: '#666' }}>Total Anomalies</div>
+              <div className="anomaly-overview">
+                <h3 className="tab-subtitle">Detection Summary</h3>
+                <div className="anomaly-grid">
+                  <div className="anomaly-stat-card">
+                    <div className="anomaly-number">{totalAnomalies}</div>
+                    <div className="anomaly-label">Total Anomalies</div>
                   </div>
-
-                  <div style={{ textAlign: 'center', padding: '15px', backgroundColor: 'white', borderRadius: '4px', border: '1px solid #e9ecef' }}>
-                    <div style={{ fontSize: '16px', fontWeight: '500', color: '#333' }}>
-                      {anomalyAnalysis.detection_method || 'Enhanced AI with ML'}
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#666' }}>Detection Method</div>
+                  <div className="anomaly-stat-card">
+                    <div className="anomaly-number detection-method">Enhanced AI with ML</div>
+                    <div className="anomaly-label">Detection Method</div>
                   </div>
                 </div>
-          </div>
+              </div>
 
               {/* Log Entries with Anomaly Detection Fields */}
               <div>
-                <h3 style={{ margin: '0 0 20px 0', color: '#333', fontSize: '18px', fontWeight: '500' }}>
-                  Log Entries with Anomaly Detection
-                </h3>
+                <h3 className="tab-subtitle">Log Entries with Anomaly Detection</h3>
 
                 {/* Pagination Controls */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                  <div style={{ fontSize: '14px', color: '#666' }}>
-                    Showing {startIndex + 1} to {Math.min(endIndex, uploadResult.log_entries?.length || 0)} of {uploadResult.log_entries?.length || 0} entries
+                <div className="pagination-controls">
+                  <div className="pagination-info">
+                    Showing {baseEntries.length === 0 ? 0 : startIndex + 1} to {Math.min(endIndex, baseEntries.length)} of {baseEntries.length} entries
                   </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-              <button
+                  <div className="pagination-buttons">
+                    <button
                       onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                disabled={currentPage === 1}
-                style={{
-                  padding: '8px 16px',
-                        border: '1px solid #e9ecef',
-                  backgroundColor: currentPage === 1 ? '#f8f9fa' : 'white',
-                        color: currentPage === 1 ? '#ccc' : '#333',
-                  borderRadius: '4px',
-                        cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                        fontSize: '13px'
-                }}
-              >
-                Previous
-              </button>
-                    <span style={{ padding: '8px 16px', border: '1px solid #e9ecef', backgroundColor: '#f8f9fa', borderRadius: '4px', fontSize: '13px' }}>
-                Page {currentPage} of {totalPages}
-              </span>
-              <button
+                      disabled={currentPage === 1}
+                      className="pagination-button"
+                    >
+                      Previous
+                    </button>
+                    <span className="pagination-page">Page {currentPage} of {totalPages}</span>
+                    <button
                       onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage === totalPages}
-                style={{
-                  padding: '8px 16px',
-                        border: '1px solid #e9ecef',
-                  backgroundColor: currentPage === totalPages ? '#f8f9fa' : 'white',
-                        color: currentPage === totalPages ? '#ccc' : '#333',
-                  borderRadius: '4px',
-                        cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-                        fontSize: '13px'
-                }}
-              >
-                Next
-              </button>
-            </div>
+                      disabled={currentPage === totalPages}
+                      className="pagination-button"
+                    >
+                      Next
+                    </button>
+                  </div>
                 </div>
 
-                {/* Log Entries Table with Anomaly Fields */}
-                <div style={{ overflowX: 'auto', backgroundColor: 'white', borderRadius: '4px', border: '1px solid #e9ecef' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ backgroundColor: '#f8f9fa' }}>
-                        <th style={{ padding: '12px', textAlign: 'left', border: '1px solid #e9ecef', fontSize: '13px', fontWeight: '500', color: '#333' }}>Timestamp</th>
-                        <th style={{ padding: '12px', textAlign: 'left', border: '1px solid #e9ecef', fontSize: '13px', fontWeight: '500', color: '#333' }}>User</th>
-                        <th style={{ padding: '12px', textAlign: 'left', border: '1px solid #e9ecef', fontSize: '13px', fontWeight: '500', color: '#333' }}>Source IP</th>
-                        <th style={{ padding: '12px', textAlign: 'left', border: '1px solid #e9ecef', fontSize: '13px', fontWeight: '500', color: '#333' }}>URL</th>
-                        <th style={{ padding: '12px', textAlign: 'left', border: '1px solid #e9ecef', fontSize: '13px', fontWeight: '500', color: '#333' }}>Action</th>
-                        <th style={{ padding: '12px', textAlign: 'left', border: '1px solid #e9ecef', fontSize: '13px', fontWeight: '500', color: '#333' }}>Anomaly Status</th>
-                        <th style={{ padding: '12px', textAlign: 'left', border: '1px solid #e9ecef', fontSize: '13px', fontWeight: '500', color: '#333' }}>Reason</th>
-                        <th style={{ padding: '12px', textAlign: 'left', border: '1px solid #e9ecef', fontSize: '13px', fontWeight: '500', color: '#333' }}>Confidence</th>
+                <div className="filter-controls">
+        <div className="filter-group">
+          <label className="filter-label">From</label>
+          <input
+            type="datetime-local"
+            value={fromTimestamp}
+            onChange={fromTime}
+            className="filter-input"
+          />
+        </div>
+        <div className="filter-group">
+          <label className="filter-label">To</label>
+          <input
+            type="datetime-local"
+            value={toTimestamp}
+            onChange={toTime}
+            className="filter-input"
+          />
+        </div>
+        <div className="filter-actions">
+          <button onClick={handleRequest} className="filter-button">Apply Filter</button>
+        </div>
+      </div>
 
+                
+
+                {/* Log Entries Table */}
+                <div className="table-container">
+                  <table className="data-table">
+                    <thead className="table-header">
+                      <tr>
+                        <th>Timestamp</th>
+                        <th>User</th>
+                        <th>Source IP</th>
+                        <th>URL</th>
+                        <th>Action</th>
+                        <th>Anomaly Status</th>
+                        <th>Reason</th>
+                        <th>Confidence</th>
                       </tr>
                     </thead>
                     <tbody>
                       {currentEntries.map((entry: any, index: number) => (
-                        <tr key={index} style={{ 
-                          backgroundColor: entry.is_anomaly ? '#f8f9fa' : 'white',
-                          borderBottom: '1px solid #e9ecef'
-                        }}>
-                          <td style={{ padding: '12px', border: '1px solid #e9ecef', fontSize: '13px', color: '#333' }}>{entry.timestamp}</td>
-                          <td style={{ padding: '12px', border: '1px solid #e9ecef', fontSize: '13px', color: '#333' }}>{entry.user}</td>
-                          <td style={{ padding: '12px', border: '1px solid #e9ecef', fontSize: '13px', color: '#333' }}>{entry.src_ip}</td>
-                          <td style={{ padding: '12px', border: '1px solid #e9ecef', fontSize: '13px', color: '#333' }}>{entry.url}</td>
-                          <td style={{ padding: '12px', border: '1px solid #e9ecef', fontSize: '13px', color: '#333' }}>{entry.action}</td>
-                          <td style={{ padding: '12px', border: '1px solid #e9ecef', fontSize: '13px' }}>
+                        <tr key={index} className={`table-row ${entry.is_anomaly ? 'anomaly' : ''}`}>
+                          <td className="table-cell">{entry.timestamp}</td>
+                          <td className="table-cell">{entry.user}</td>
+                          <td className="table-cell">{entry.src_ip}</td>
+                          <td className="table-cell">{entry.url}</td>
+                          <td className="table-cell">{entry.action}</td>
+                          <td className="table-cell">
                             {entry.is_anomaly ? (
-                              <span style={{ 
-                                padding: '4px 8px', 
-                                backgroundColor: '#dc3545', 
-                                color: 'white',
-                                borderRadius: '4px',
-                                fontSize: '12px',
-                                fontWeight: '500'
-                              }}>
-                                ANOMALY
-                              </span>
+                              <span className="anomaly-badge">ANOMALY</span>
                             ) : (
-                              <span style={{ 
-                                padding: '4px 8px', 
-                                backgroundColor: '#28a745', 
-                                color: 'white', 
-                                borderRadius: '4px',
-                                fontSize: '12px',
-                                fontWeight: '500'
-                              }}>
-                                NORMAL
-                              </span>
+                              <span className="normal-badge">NORMAL</span>
                             )}
                           </td>
-                          <td style={{ padding: '12px', border: '1px solid #e9ecef', fontSize: '13px', color: '#333' }}>
-                            {generateAnomalyReason(entry)}
+                          <td className="table-cell">
+                            {entry.anomaly_reasons && entry.anomaly_reasons.length > 0 
+                              ? entry.anomaly_reasons.join('') 
+                              : entry.is_anomaly ? 'Anomaly detected' : 'Normal activity'}
                           </td>
-                          <td style={{ padding: '12px', border: '1px solid #e9ecef', fontSize: '13px', color: '#333' }}>
+                          <td className="table-cell">
                             {entry.is_anomaly ? 
                               Math.round((entry.anomaly_confidence || 0.8) * 100) + '%' : 
                               'N/A'
                             }
                           </td>
-
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
           {/* Data Visualization Tab */}
           {activeTab === 'visualization' && (
             <div>
-              <h2 style={{ margin: '0 0 25px 0', color: '#333', fontSize: '22px', fontWeight: '500' }}>
-                Data Visualization & Analytics
-              </h2>
+              <h2 className="tab-title">Data Visualization & Analytics</h2>
 
               {/* Overview Charts */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '25px', marginBottom: '30px' }}>
-                {/* Activity Distribution */}
-                <div style={{ padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '6px', border: '1px solid #e9ecef' }}>
-                  <h3 style={{ margin: '0 0 20px 0', color: '#333', fontSize: '18px', fontWeight: '500' }}>
-                    Activity Distribution
-                  </h3>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around' }}>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ 
-                        width: '80px', 
-                        height: '80px', 
-                        borderRadius: '50%', 
-                        backgroundColor: '#28a745',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'white',
-                        fontSize: '16px',
-                        fontWeight: '500',
-                        margin: '0 auto 10px auto'
-                      }}>
-                        {vizData.normalCount}
-                      </div>
-                      <div style={{ fontSize: '14px', color: '#666' }}>Normal</div>
+              <div className="visualization-grid">
+                <div className="chart-card">
+                  <h3 className="chart-title">Activity Distribution</h3>
+                  <div className="chart-content">
+                    <div className="chart-item">
+                      <div className="chart-circle normal">{totalEntries - totalAnomalies}</div>
+                      <div className="chart-label">Normal</div>
                     </div>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ 
-                        width: '80px', 
-                        height: '80px', 
-                        borderRadius: '50%', 
-                        backgroundColor: '#dc3545',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'white',
-                        fontSize: '16px',
-                        fontWeight: '500',
-                        margin: '0 auto 10px auto'
-                      }}>
-                        {vizData.anomalyCount}
-                      </div>
-                      <div style={{ fontSize: '14px', color: '#666' }}>Anomalies</div>
+                    <div className="chart-item">
+                      <div className="chart-circle anomaly">{totalAnomalies}</div>
+                      <div className="chart-label">Anomalies</div>
                     </div>
                   </div>
                 </div>
 
                 {/* Top Users */}
-                <div style={{ padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '6px', border: '1px solid #e9ecef' }}>
-                  <h3 style={{ margin: '0 0 20px 0', color: '#333', fontSize: '18px', fontWeight: '500' }}>
-                    Top Active Users
-                  </h3>
-                  <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
-                    {Object.entries(vizData.userActivity)
-                      .sort(([,a], [,b]) => (b as number) - (a as number))
-                      .slice(0, 5)
-                      .map(([user, count], index) => (
-                        <div key={index} style={{ 
-                          display: 'flex', 
-                          justifyContent: 'space-between', 
-                          alignItems: 'center',
-                          padding: '8px 0',
-                          borderBottom: index < 4 ? '1px solid #e9ecef' : 'none'
-                        }}>
-                          <span style={{ fontSize: '14px', color: '#333' }}>{user}</span>
-                          <span style={{ fontSize: '14px', color: '#666', fontWeight: '500' }}>{count}</span>
-                        </div>
-                      ))}
+                <div className="chart-card">
+                  <h3 className="chart-title">Top Active Users</h3>
+                  <div className="users-list">
+                    {(() => {
+                      const userStats: { [key: string]: number } = {};
+                      uploadResult.log_entries?.forEach((entry: any) => {
+                        const user = entry.user || 'unknown';
+                        userStats[user] = (userStats[user] || 0) + 1;
+                      });
+                      return Object.entries(userStats)
+                        .sort(([,a], [,b]) => (b as number) - (a as number))
+                        .slice(0, 5)
+                        .map(([user, count], index) => (
+                          <div key={index} className="user-item">
+                            <span className="user-name">{user}</span>
+                            <span className="user-count">{count}</span>
+                          </div>
+                        ));
+                    })()}
                   </div>
                 </div>
               </div>
 
               {/* Time-based Analysis */}
-              <div style={{ marginBottom: '30px' }}>
-                <h3 style={{ margin: '0 0 20px 0', color: '#333', fontSize: '18px', fontWeight: '500' }}>
-                  Activity by Time Period
-                </h3>
-                <div style={{ 
-                  padding: '20px', 
-                  backgroundColor: 'white', 
-                  borderRadius: '6px', 
-                  border: '1px solid #e9ecef',
-                  overflowX: 'auto'
-                }}>
-                  <div style={{ display: 'flex', gap: '10px', minWidth: 'max-content' }}>
-                    {Object.entries(vizData.timeSlots)
-                      .sort(([a], [b]) => parseInt(a.split(':')[0]) - parseInt(b.split(':')[0]))
-                      .map(([timeSlot, count]) => (
-                        <div key={timeSlot} style={{ textAlign: 'center', minWidth: '80px' }}>
-                          <div style={{ 
-                            height: `${Math.max(20, (count / Math.max(...Object.values(vizData.timeSlots))) * 100)}px`,
-                            backgroundColor: '#007bff',
-                            borderRadius: '4px 4px 0 0',
-                            marginBottom: '5px'
-                          }}></div>
-                          <div style={{ fontSize: '12px', color: '#666' }}>{timeSlot}</div>
-                          <div style={{ fontSize: '14px', fontWeight: '500', color: '#333' }}>{count}</div>
-                        </div>
-                      ))}
+              <div className="time-analysis">
+                <h3 className="tab-subtitle">Activity by Time Period</h3>
+                <div className="time-chart">
+                  <div className="time-bars">
+                    {(() => {
+                      const timeSlots: { [key: string]: number } = {};
+                      uploadResult.log_entries?.forEach((entry: any) => {
+                        const hour = entry.timestamp ? new Date(entry.timestamp).getHours() : 0;
+                        const timeSlot = `${hour}:00-${hour + 1}:00`;
+                        timeSlots[timeSlot] = (timeSlots[timeSlot] || 0) + 1;
+                      });
+                      return Object.entries(timeSlots)
+                        .sort(([a], [b]) => parseInt(a.split(':')[0]) - parseInt(b.split(':')[0]))
+                        .map(([timeSlot, count]) => (
+                          <div key={timeSlot} className="time-bar">
+                            <div 
+                              className="time-bar-chart"
+                              style={{ height: `${Math.max(20, (count / Math.max(...Object.values(timeSlots))) * 100)}px` }}
+                            ></div>
+                            <div className="time-label">{timeSlot}</div>
+                            <div className="time-count">{count}</div>
+                          </div>
+                        ));
+                    })()}
                   </div>
                 </div>
               </div>
 
               {/* Top IP Addresses */}
               <div>
-                <h3 style={{ margin: '0 0 20px 0', color: '#333', fontSize: '18px', fontWeight: '500' }}>
-                  Top Source IP Addresses
-                </h3>
-                <div style={{ 
-                  padding: '20px', 
-                  backgroundColor: 'white', 
-                  borderRadius: '6px', 
-                  border: '1px solid #e9ecef'
-                }}>
-                  <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                    {Object.entries(vizData.ipActivity)
-                      .sort(([,a], [,b]) => (b as number) - (a as number))
-                      .slice(0, 10)
-                      .map(([ip, count], index) => (
-                        <div key={index} style={{ 
-                          display: 'flex', 
-                          justifyContent: 'space-between', 
-                          alignItems: 'center',
-                          padding: '12px',
-                          backgroundColor: index % 2 === 0 ? '#f8f9fa' : 'white',
-                          borderRadius: '4px',
-                          marginBottom: '8px'
-                        }}>
-                          <span style={{ fontSize: '14px', color: '#333', fontFamily: 'monospace' }}>{ip}</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <div style={{ 
-                              width: '100px', 
-                              height: '8px', 
-                              backgroundColor: '#e9ecef', 
-            borderRadius: '4px', 
-                              overflow: 'hidden'
-                            }}>
-                              <div style={{ 
-                                width: `${(count / Math.max(...Object.values(vizData.ipActivity))) * 100}%`,
-                                height: '100%',
-                                backgroundColor: '#007bff'
-                              }}></div>
+                <h3 className="tab-subtitle">Top Source IP Addresses</h3>
+                <div className="ip-analysis">
+                  <div className="ip-list">
+                    {(() => {
+                      const ipStats: { [key: string]: number } = {};
+                      uploadResult.log_entries?.forEach((entry: any) => {
+                        const ip = entry.src_ip || 'unknown';
+                        ipStats[ip] = (ipStats[ip] || 0) + 1;
+                      });
+                      return Object.entries(ipStats)
+                        .sort(([,a], [,b]) => (b as number) - (a as number))
+                        .slice(0, 10)
+                        .map(([ip, count], index) => (
+                          <div key={index} className="ip-item">
+                            <span className="ip-address">{ip}</span>
+                            <div className="ip-chart-container">
+                              <div className="ip-progress-bar">
+                                <div 
+                                  className="ip-progress-fill"
+                                  style={{ width: `${(count / Math.max(...Object.values(ipStats))) * 100}%` }}
+                                ></div>
+                              </div>
+                              <span className="ip-count">{count}</span>
                             </div>
-                            <span style={{ fontSize: '14px', color: '#666', fontWeight: '500', minWidth: '30px' }}>{count}</span>
                           </div>
-                        </div>
-                      ))}
+                        ));
+                    })()}
                   </div>
                 </div>
               </div>

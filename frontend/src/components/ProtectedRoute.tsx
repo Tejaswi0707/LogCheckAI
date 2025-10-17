@@ -1,18 +1,15 @@
-import { useRequireAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/AuthContext';
+import { Navigate } from 'react-router-dom';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useRequireAuth();
-
-  if (isLoading) {
-    return <div>Loading...</div>;
-  }
+  const { isAuthenticated } = useAuth();
 
   if (!isAuthenticated) {
-    return null; // useRequireAuth will handle the redirect
+    return <Navigate to="/login" replace />;
   }
 
   return <>{children}</>;

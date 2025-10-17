@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../config';
 
 const Dashboard = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -41,7 +42,7 @@ const Dashboard = () => {
       const formData = new FormData();
       formData.append('file', selectedFile);
 
-      const response = await fetch('http://localhost:5000/upload-simple', {
+      const response = await fetch(`${API_BASE_URL}/upload-simple`, {
         method: 'POST',
         body: formData,
       });
@@ -69,26 +70,32 @@ const Dashboard = () => {
     }
   };
 
+  const getStatusClass = () => {
+    if (uploadStatus.includes('successfully')) return 'status-message status-success';
+    if (uploadStatus.includes('selected') || uploadStatus.includes('Processing')) return 'status-message status-warning';
+    return 'status-message status-error';
+  };
+
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px' }}>
+    <div className="dashboard-container">
       <h1>Dashboard</h1>
       
-      <div style={{ border: '1px solid #ccc', padding: '20px', borderRadius: '8px', marginBottom: '20px' }}>
-        <h2>Upload File</h2>
-        <div style={{ marginBottom: '20px' }}>
+      <div className="upload-section">
+        <h2 className="upload-title">Upload File</h2>
+        <div className="form-group">
           <input
             type="file"
             accept=".txt,.log"
             onChange={handleFileSelect}
-            style={{ marginBottom: '10px' }}
+            className="file-input"
           />
-                  <p style={{ margin: '5px 0', fontSize: '14px', color: '#666' }}>
-          Select a .txt or .log file to upload. Maximum size: 10MB
-        </p>
+          <p className="file-info">
+            Select a .txt or .log file to upload. Maximum size: 10MB
+          </p>
         
-        <p style={{ marginTop: '10px', fontSize: '13px', color: '#666' }}>
-          Note: Mandatory fields to have (timestamp, src_ip, user, url, action)
-        </p>
+          <p className="file-note">
+            Note: Mandatory fields to have (timestamp, src_ip, user, url, action)
+          </p>
         </div>
         
         <br />
@@ -96,28 +103,13 @@ const Dashboard = () => {
         <button
           onClick={handleFileUpload}
           disabled={!selectedFile || isProcessing}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: selectedFile ? '#007bff' : '#ccc',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: selectedFile && !isProcessing ? 'pointer' : 'not-allowed'
-          }}
+          className="upload-button"
         >
-          {isProcessing ? 'Processing...' : 'Upload & Analyze'}
+          {isProcessing ? 'Processing...' : 'Upload File'}
         </button>
         
         {uploadStatus && (
-          <div style={{ 
-            marginTop: '10px', 
-            padding: '10px', 
-            backgroundColor: uploadStatus.includes('File selected') || uploadStatus.includes('successfully') || uploadStatus.includes('Processing file...') ? '#d4edda' : 
-                           uploadStatus.includes('too large') ? '#fff3cd' : '#f8d7da',
-            borderRadius: '4px',
-            color: uploadStatus.includes('File selected') || uploadStatus.includes('successfully') || uploadStatus.includes('Processing file...') ? '#155724' : 
-                   uploadStatus.includes('too large') ? '#856404' : '#721c24'
-          }}>
+          <div className={getStatusClass()}>
             {uploadStatus}
           </div>
         )}

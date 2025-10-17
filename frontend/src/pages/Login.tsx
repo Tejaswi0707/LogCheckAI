@@ -1,198 +1,85 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 const Login = () => {
-  const navigate = useNavigate();
-  const { login, isAuthenticated, clearError } = useAuth();
-  
-  const [formData, setFormData] = useState({
-    email: '',
-    password: ''
-  });
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [message, setMessage] = useState('');
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/dashboard');
-    }
-  }, [isAuthenticated, navigate]);
-
-  useEffect(() => {
-    clearError();
-  }, [clearError]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
+  const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!formData.email || !formData.password) {
-      setMessage('Please fill in all fields');
-      return;
-    }
-    
+    setError('');
     setIsLoading(true);
-    setMessage('');
 
     try {
-      const response = await fetch('http://localhost:5000/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ email: formData.email, password: formData.password })
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.access_token) {
-        // Use the auth context to handle successful login
-        const success = await login(formData.email, formData.password);
-        if (success) {
-          // Navigate directly to dashboard without showing success message
-          navigate('/dashboard');
-        } else {
-          setMessage('Login successful but failed to store authentication data');
-        }
-      } else {
-        // Display the error message from the backend
-        setMessage(data.message || 'Login failed');
+      const success = await login(email, password);
+      if (success) {
+        navigate('/dashboard');
       }
-    } catch (error) {
-      setMessage('Network error. Please check your connection and try again.');
+    } catch (err: any) {
+      setError(err.message || 'Login failed');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const getMessageStyle = (message: string) => {
-    if (message.includes('successful')) {
-      return {
-        backgroundColor: '#d4edda',
-        color: '#155724',
-        border: '1px solid #c3e6cb'
-      };
-    } else {
-      // All error messages - red
-      return {
-        backgroundColor: '#f8d7da',
-        color: '#721c24',
-        border: '1px solid #f5c6cb'
-      };
-    }
-  };
-
   return (
-    <div style={{
-      maxWidth: '400px',
-      margin: '0 auto',
-      padding: '20px',
-      border: '1px solid #ddd',
-      borderRadius: '8px',
-      backgroundColor: '#fff'
-    }}>
-      <h2 style={{ textAlign: 'center', marginBottom: '20px' }}>Login</h2>
-      
-      {message && (
-        <div style={{
-          padding: '10px',
-          marginBottom: '15px',
-          borderRadius: '4px',
-          ...getMessageStyle(message)
-        }}>
-          {message}
-        </div>
-      )}
-
+    <div className="auth-container">
+      <h1>Login</h1>
       <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: '15px' }}>
-          <label htmlFor="email" style={{ display: 'block', marginBottom: '5px' }}>
+        <div className="form-group">
+          <label htmlFor="email" className="form-label">
             Email:
           </label>
           <input
             type="email"
             id="email"
-            name="email"
-            value={formData.email}
-            onChange={handleChange}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             required
-            style={{
-              width: '100%',
-              padding: '8px',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
-              boxSizing: 'border-box'
-            }}
+            className="form-input"
           />
         </div>
-
-        <div style={{ marginBottom: '15px' }}>
-          <label htmlFor="password" style={{ display: 'block', marginBottom: '5px' }}>
+        
+        <div className="form-group">
+          <label htmlFor="password" className="form-label">
             Password:
           </label>
           <input
             type="password"
             id="password"
-            name="password"
-            value={formData.password}
-            onChange={handleChange}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             required
-            style={{
-              width: '100%',
-              padding: '8px',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
-              boxSizing: 'border-box'
-            }}
+            className="form-input"
           />
         </div>
-
+        
+        {error && (
+          <div className="error-message">
+            {error}
+          </div>
+        )}
+        
         <button
           type="submit"
           disabled={isLoading}
-          style={{
-            width: '100%',
-            padding: '10px',
-            backgroundColor: '#007bff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: isLoading ? 'not-allowed' : 'pointer',
-            opacity: isLoading ? 0.6 : 1
-          }}
+          className="auth-button"
         >
-          {isLoading ? 'Logging In...' : 'Login'}
+          {isLoading ? 'Logging in...' : 'Login'}
         </button>
       </form>
       
-      <div style={{
-        textAlign: 'center',
-        marginTop: '20px',
-        paddingTop: '20px',
-        borderTop: '1px solid #eee'
-      }}>
-        <p style={{ margin: '0', color: '#666', fontSize: '14px' }}>
-          New user?{' '}
-          <a 
-            href="/signup"
-            style={{
-              color: '#007bff',
-              textDecoration: 'none',
-              fontWeight: 'bold'
-            }}
-          >
-            Register here
-          </a>
-        </p>
-      </div>
+      <p className="auth-link">
+        Don't have an account?{' '}
+        <a href="/signup">
+          Sign up here
+        </a>
+      </p>
     </div>
   );
 };
