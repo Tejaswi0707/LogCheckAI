@@ -31,17 +31,22 @@ app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)
 jwt = JWTManager(app)
 CORS(app)
 
-DB_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'port': int(os.getenv('DB_PORT', 5432)),
-    'database': os.getenv('DB_NAME', 'signup'),
-    'user': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', 'root')
-}
-
 def get_db_connection():
     try:
-        connection = psycopg2.connect(**DB_CONFIG)
+        # Try DATABASE_URL first (for Render, Railway, Heroku)
+        database_url = os.getenv('DATABASE_URL')
+        if database_url:
+            connection = psycopg2.connect(database_url)
+        else:
+            # Fall back to individual environment variables (for local dev)
+            DB_CONFIG = {
+                'host': os.getenv('DB_HOST', 'localhost'),
+                'port': int(os.getenv('DB_PORT', 5432)),
+                'database': os.getenv('DB_NAME', 'signup'),
+                'user': os.getenv('DB_USER', 'postgres'),
+                'password': os.getenv('DB_PASSWORD', 'root')
+            }
+            connection = psycopg2.connect(**DB_CONFIG)
         return connection
     except Exception as e:
         print(f"Database connection error: {e}")
